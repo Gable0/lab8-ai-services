@@ -5,18 +5,23 @@ export class SimpleChatController {
         this.model = model;
         this.view = view;
         this.pendingBotTimers = new Map();
+
+        this.botReplyDelayMs = 250;
+
         this.boundSend = (evt) => this.onSendMessage(evt);
         this.boundClear = () => this.onClearChat();
         this.boundDelete = (evt) => this.onDeleteMessage(evt);
         this.boundEdit = (evt) => this.onEditMessage(evt);
         this.boundExport = () => this.onExportChat();
         this.boundImport = (evt) => this.onImportChat(evt);
+        this.boundModelChange = (evt) => this.onModelChange(evt);
     }
 
     init(containerSelector = "#app") {
-        this.registerViewEvents();
         this.view.render(containerSelector);
-        this.view.displayImportedMessages(this.model.getAllMessages());
+        this.registerViewEvents();
+        this.model.addEventListener("change", this.boundModelChange);
+        this.syncViewWithModel();
     }
 
     registerViewEvents() {
@@ -28,30 +33,40 @@ export class SimpleChatController {
         this.view.addEventListener("importChat", this.boundImport);
     }
 
+    onModelChange(evt) {
+        const { messages, stats } = evt.detail;
+        this.view.renderMessages(messages);
+        this.view.updateStats(stats);
+    }
+
+    syncViewWithModel() {
+        this.view.renderMessages(this.model.getAllMessages());
+        this.view.updateStats(this.model.getStats());
+    }
+
     onSendMessage(evt) {
         const { message, isUser } = evt.detail;
         if (!message) return;
 
         const entry = this.model.addMessage(message, isUser);
-        this.view.appendMessageToChat(entry, isUser);
 
         if (isUser) {
             const timerId = setTimeout(() => {
                 const reply = getBotResponse(message);
-                const botEntry = this.model.addMessage(reply, false);
-                this.view.appendMessageToChat(botEntry, false);
+                this.model.addMessage(reply, false);
                 this.pendingBotTimers.delete(entry.id);
-            }, 500);
+            }, this.botReplyDelayMs);
 
             this.pendingBotTimers.set(entry.id, timerId);
         }
     }
 
     onClearChat() {
-        this.model.clearMessages();
-        this.view.clearChatMessages();
-        this.pendingBotTimers.forEach((timerId) => clearTimeout(timerId));
-        this.pendingBotTimers.clear();
+        const removed = this.model.clearMessages();
+        removed
+            .filter((message) => message.isUser)
+            .forEach((message) => this.cancelBotTimer(message.id));
+        this.cancelAllBotTimers();
     }
 
     onDeleteMessage(evt) {
@@ -59,48 +74,31 @@ export class SimpleChatController {
         if (!messageId) return;
 
         const removed = this.model.removeMessage(messageId);
-        if (Array.isArray(removed) && removed.length > 0) {
-            removed.forEach((entry) => {
-                const timerId = this.pendingBotTimers.get(entry.id);
-                if (timerId) {
-                    clearTimeout(timerId);
-                    this.pendingBotTimers.delete(entry.id);
-                }
-            });
+        if (!Array.isArray(removed) || removed.length === 0) return;
 
-            this.view.removeMessageFromChat(messageId);
-        }
+        removed
+            .filter((message) => message.isUser)
+            .forEach((message) => this.cancelBotTimer(message.id));
     }
 
     onEditMessage(evt) {
         const { messageId, newText } = evt.detail;
-        if (!messageId || !newText) return;
+        const trimmed = newText ? newText.trim() : "";
+        if (!messageId || !trimmed) return;
 
-        const result = this.model.updateMessage(messageId, newText);
-        if (!result) return;
+        const { nextBotMessage } = this.model.updateUserMessage(messageId, trimmed);
 
-        const { updatedMessage, nextBotMessage } = result;
-        this.view.updateMessageInChat(messageId, updatedMessage.message);
-
-        const existingTimer = this.pendingBotTimers.get(messageId);
-        if (existingTimer) {
-            clearTimeout(existingTimer);
-            this.pendingBotTimers.delete(messageId);
-        }
+        this.cancelBotTimer(messageId);
 
         if (nextBotMessage) {
-            const reply = getBotResponse(newText);
-            nextBotMessage.message = reply;
-            nextBotMessage.editedAt = new Date().toISOString();
-            this.model.writeToStorage();
-            this.view.updateMessageInChat(nextBotMessage.id, reply);
+            const reply = getBotResponse(trimmed);
+            this.model.updateMessageContent(nextBotMessage.id, reply, { markEdited: true });
         } else {
             const timerId = setTimeout(() => {
-                const reply = getBotResponse(newText);
-                const botEntry = this.model.addMessage(reply, false);
-                this.view.appendMessageToChat(botEntry, false);
+                const reply = getBotResponse(trimmed);
+                this.model.addMessage(reply, false);
                 this.pendingBotTimers.delete(messageId);
-            }, 500);
+            }, this.botReplyDelayMs);
 
             this.pendingBotTimers.set(messageId, timerId);
         }
@@ -126,11 +124,29 @@ export class SimpleChatController {
         if (!importedData) return;
 
         try {
-            const sanitized = this.model.importMessages(importedData);
-            this.view.displayImportedMessages(sanitized);
+            const payload = Array.isArray(importedData) ? importedData : importedData.messages;
+            if (!Array.isArray(payload)) {
+                throw new Error("Invalid chat format");
+            }
+
+            this.model.importMessages(payload);
+            this.cancelAllBotTimers();
         } catch (err) {
             alert("Unable to import chat data.");
             console.error(err);
         }
+    }
+
+    cancelBotTimer(messageId) {
+        const timerId = this.pendingBotTimers.get(messageId);
+        if (!timerId) return;
+
+        clearTimeout(timerId);
+        this.pendingBotTimers.delete(messageId);
+    }
+
+    cancelAllBotTimers() {
+        this.pendingBotTimers.forEach((timerId) => clearTimeout(timerId));
+        this.pendingBotTimers.clear();
     }
 }

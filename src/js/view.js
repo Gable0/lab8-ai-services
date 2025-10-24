@@ -2,7 +2,6 @@ export class SimpleChatView extends EventTarget {
     constructor() {
         super();
         this.dom = {};
-        this.debug = false;
     }
 
     render(containerSelector) {
@@ -49,7 +48,9 @@ export class SimpleChatView extends EventTarget {
             sendButton: document.getElementById("send-btn"),
             exportChatButton: document.getElementById("export-chat-btn"),
             importChatButton: document.getElementById("import-chat-btn"),
-            clearChatButton: document.getElementById("clear-chat-btn")
+            clearChatButton: document.getElementById("clear-chat-btn"),
+            messageCount: document.getElementById("message-count"),
+            lastSaved: document.getElementById("last-saved")
         };
     }
 
@@ -75,6 +76,17 @@ export class SimpleChatView extends EventTarget {
         userInput.addEventListener("keypress", (evt) => this.onInputKeypress(evt));
 
         messageContainer.addEventListener("click", (evt) => this.onMessageContainerClick(evt));
+    }
+
+    renderMessages(messages = []) {
+        this.clearChatMessages();
+
+        if (!Array.isArray(messages) || messages.length === 0) {
+            return;
+        }
+
+        messages.forEach((message) => this.appendMessageToChat(message, message.isUser));
+        this.dom.messageContainer.scrollTop = this.dom.messageContainer.scrollHeight;
     }
 
     handleSendClick() {
@@ -132,7 +144,7 @@ export class SimpleChatView extends EventTarget {
         const textNode = target.querySelector(".message-text");
         if (!textNode) return;
 
-        const currentText = textNode.textContent;
+        const currentText = target.dataset.messageText || textNode.textContent;
         const editor = document.createElement("textarea");
         editor.value = currentText;
         editor.classList.add("edit-textarea");
@@ -202,7 +214,7 @@ export class SimpleChatView extends EventTarget {
     openFileImportDialog() {
         const picker = document.createElement("input");
         picker.type = "file";
-        picker.accept = ".txt,.json";
+        picker.accept = "application/json,.json";
         picker.style.display = "none";
 
         picker.addEventListener("change", (evt) => {
@@ -236,14 +248,23 @@ export class SimpleChatView extends EventTarget {
     appendMessageToChat(messageObj, isUser) {
         const item = document.createElement("li");
         item.dataset.messageId = messageObj.id;
+        item.dataset.messageText = messageObj.message;
         item.classList.add(isUser ? "user-message" : "bot-output");
 
         const content = document.createElement("div");
         content.classList.add("message-content");
+        content.title = this.formatTimestamp(messageObj.timestamp);
 
         const textNode = document.createElement("span");
         textNode.classList.add("message-text");
         textNode.textContent = messageObj.message;
+
+        if (messageObj.edited) {
+            const indicator = document.createElement("span");
+            indicator.classList.add("edited-indicator");
+            indicator.textContent = " (edited)";
+            textNode.appendChild(indicator);
+        }
 
         content.appendChild(textNode);
         item.appendChild(content);
@@ -259,30 +280,28 @@ export class SimpleChatView extends EventTarget {
             editBtn.dataset.action = "edit";
             editBtn.dataset.messageId = messageObj.id;
             editBtn.title = "Edit message";
-            editBtn.textContent = "✍️"; //icon for edit message
+            editBtn.textContent = "✍️";
 
             const deleteBtn = document.createElement("button");
             deleteBtn.classList.add("message-action-btn");
             deleteBtn.dataset.action = "delete";
             deleteBtn.dataset.messageId = messageObj.id;
             deleteBtn.title = "Delete message";
-            deleteBtn.textContent = "🗑"; //icon for delete message
+            deleteBtn.textContent = "🗑";
 
             actions.append(editBtn, deleteBtn);
             item.appendChild(actions);
         }
 
         this.dom.messageContainer.appendChild(item);
-        this.dom.messageContainer.scrollTop = this.dom.messageContainer.scrollHeight;
     }
 
     clearChatMessages() {
-        this.dom.messageContainer.querySelectorAll("li").forEach((node) => node.remove());
+        this.dom.messageContainer.innerHTML = "";
     }
 
     displayImportedMessages(messages) {
-        this.clearChatMessages();
-        messages.forEach((message) => this.appendMessageToChat(message, message.isUser));
+        this.renderMessages(messages);
     }
 
     processUserMessage(raw) {
@@ -290,41 +309,34 @@ export class SimpleChatView extends EventTarget {
         return cleaned === "" ? false : cleaned;
     }
 
-    removeMessageFromChat(messageId) {
-        const target = this.dom.messageContainer.querySelector(`[data-message-id="${messageId}"]`);
-        if (!target) return;
+    updateStats(stats = { count: 0, lastSavedAt: null }) {
+        if (!this.dom.messageCount || !this.dom.lastSaved) return;
 
-        let current = target;
-        while (current) {
-            const next = current.nextElementSibling;
-            current.remove();
-            current = next;
-        }
+        const count = typeof stats.count === "number" ? stats.count : 0;
+        const label = count === 1 ? "message" : "messages";
+        this.dom.messageCount.textContent = `${count} ${label}`;
+
+        const savedLabel = stats.lastSavedAt
+            ? this.formatTimestamp(stats.lastSavedAt)
+            : "never";
+
+        this.dom.lastSaved.textContent = `Last saved: ${savedLabel}`;
     }
 
-    updateMessageInChat(messageId, newText) {
-        const target = this.dom.messageContainer.querySelector(`[data-message-id="${messageId}"]`);
-        if (!target) return;
+    formatTimestamp(isoString) {
+        if (!isoString) return "Unknown time";
 
-        const textNode = target.querySelector(".message-text");
-        if (!textNode) return;
-
-        textNode.textContent = newText;
-
-        const isUserMessage = target.classList.contains("user-message");
-        const indicator = target.querySelector(".edited-indicator");
-
-        if (isUserMessage) {
-            let edited = indicator;
-            if (!edited) {
-                edited = document.createElement("span");
-                edited.classList.add("edited-indicator");
-                textNode.appendChild(edited);
-            }
-            edited.textContent = " (edited)";
-        } else if (indicator) {
-            indicator.remove();
+        const parsed = new Date(isoString);
+        if (Number.isNaN(parsed.getTime())) {
+            return "Unknown time";
         }
+
+        return parsed.toLocaleString([], {
+            month: "short",
+            day: "numeric",
+            hour: "numeric",
+            minute: "2-digit"
+        });
     }
 
     updateSendButtonState() {
