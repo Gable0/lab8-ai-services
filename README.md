@@ -1,72 +1,60 @@
-# Chat Assistant – Lab 7 (MVC + CRUD)
+# lab7-mvc-crud - Gable Krich
+
 Fall 2025 · COMP 305
+
+## Link to the Live Page using Netlify: _Coming soon_
 
 ---
 
-## Architecture Overview
+## MVC Roles and Responsibilities
+- **Model (`src/js/model.js`)** manages all chat data, persists it to `localStorage`, emits `change` events after every CRUD action, and supports JSON import/export with timestamps and edited flags.
+- **View (`src/js/view.js`)** renders the classic Lab 6 style chat UI, handles user interactions (send, edit, delete, import, export), and raises DOM events without touching data directly.
+- **Controller (`src/js/controller.js`)** listens to view events, coordinates updates with the model, resyncs the UI on model changes, and schedules quarter-second bot replies while cancelling timers when edits or deletes occur.
+- **Bot (`src/js/eliza.js`)** provides the Eliza-style keyword matcher so the controller can generate conversational responses.
 
-This is a small chat app that follows a basic Model–View–Controller layout.
+---
 
-- **Model (`src/js/model.js`)**  
-  Keeps an array of messages, saves them (plus a last-saved timestamp) to `localStorage`, and handles import/export. It extends `EventTarget`, so every CRUD change dispatches a `change` event that the rest of the app can react to.
-
-- **View (`src/js/view.js`)**  
-  Draws the chat box, wires up button clicks, renders the message list, and fires events like `sendMessage` or `deleteMessage`. It also controls the edit/delete buttons that show up on your messages.
-
-- **Controller (`src/js/controller.js`)**  
-  Listens to the view events and updates the model. Because the model now broadcasts updates, the controller simply forwards the latest messages/stats to the view. It also starts the short bot reply timer and cancels those timers if you edit, delete, import, or clear messages.
-
-- **Bot (`src/js/eliza.js`)**  
-  Just returns a reply string based on what you typed. The controller calls it whenever it needs a response.
-
-Most of the look and feel lives in `src/styles.css`, which I tweaked to match the reference screenshot.
+## Clear Explanation of Trade-offs
+- **MVC Separation:** Keeps responsibilities distinct for easier maintenance, but introduces more files and event wiring compared to a single-script solution.
+- **localStorage Persistence:** Works offline and matches lab requirements; however, corrupted storage must be guarded against during import.
+- **Cascading Deletes:** Ensures user/bot pairs stay aligned, though it removes all subsequent messages and needs clear confirmation.
+- **Quarter-Second Bot Delay:** Delivers quick feedback that feels responsive, yet still gives the impression of an intentional reply.
 
 ---
 
 ## User Guide
-
-1. **Launch**  
-   Open `src/index.html` with Live Server (or any local web server). The script in `src/js/app.js` kicks on and builds the app.
-
-2. **Send Messages**  
-   Type in the bottom bar. Once there’s text, the Send button lights up. Your message shows on the right and, a quarter-second later, the bot answer shows on the left.
-
-3. **Edit or Delete**  
-   Click your own message to see the edit/delete buttons. Editing triggers a fresh bot reply based on the new text (and marks both entries as edited). Deleting removes the selected message plus everything beneath it so the conversation stays aligned with bot replies.
-
-4. **Import / Export / Clear**  
-   - *Export* saves every message plus metadata to a JSON file.  
-   - *Import* reads either the export format or a plain array of message objects.  
-   - *Clear* wipes the chat and clears `localStorage` after a quick confirmation.
-
-5. **Persistence**  
-   Because the model writes to `localStorage`, reloading the page brings back your chat unless you cleared it.
+- Open `src/index.html` with a local dev server so ES modules load correctly.
+- Type a message; the Send button activates once there’s text and the bot replies 0.25 s later.
+- Use the edit/delete buttons on user messages; edits trigger fresh bot replies and deletes remove the selected message plus those beneath it.
+- Export downloads the conversation as JSON, Import loads a saved conversation, and Clear wipes everything after confirmation.
+- Refresh the page to see persistence in action; the model restores messages from `localStorage`.
 
 ---
 
 ## Reflections & Notes
-
-- Using DOM events for the MVC setup keeps each file focused on its own job instead of mixing everything together.
-- Cascading deletes keep user/bot exchanges paired; the model change events ensure the view and stored data stay in sync after a wipe.
-- Tracking timers in the controller (plus the helper that cancels them on every destructive action) makes sure edited messages get new bot replies without duplicate responses.
-- Styling took a couple of tries, but the final version feels close to the example while still being original.
-
----
-
-## Helpful Links
-
-- **Source Folder**: [`src/`](./src)  
-- **Entry Point**: [`src/js/app.js`](./src/js/app.js)  
-- **Model**: [`src/js/model.js`](./src/js/model.js)  
-- **View**: [`src/js/view.js`](./src/js/view.js)  
-- **Controller**: [`src/js/controller.js`](./src/js/controller.js)  
-- **Bot Logic**: [`src/js/eliza.js`](./src/js/eliza.js)
+- DOM events between MVC layers kept responsibilities tidy and made it easy to swap the view without changing logic.
+- Tracking pending bot timers in the controller prevents duplicate replies when users edit or delete quickly.
+- Restoring the original Lab 6 styling while layering in MVC behaviors balanced familiarity with new structure.
+- Import/export shaped the data contract so future labs can swap storage providers without changing the view.
 
 ---
 
-## Requirements Checklist
+## Links and Documentation
+- [Entry Point](src/js/app.js) – boots the MVC stack on `DOMContentLoaded`.
+- [Model](src/js/model.js) – CRUD, persistence, and event dispatchers.
+- [View](src/js/view.js) – UI rendering, edit/delete helpers, import/export dialogs.
+- [Controller](src/js/controller.js) – coordination logic and bot timing.
+- [Eliza Bot](src/js/eliza.js) – keyword-based response table.
+- [Stylesheet](src/styles.css) – original Lab 6 look and feel carried over.
 
-- ✅ Clear explanation of architecture  
-- ✅ User guide for features  
-- ✅ Thoughtful reflections on decisions  
-- ✅ Links to key modules and technical notes
+---
+
+## Step-by-Step Work Log
+1. `src/index.html` – Created the root container and module script reference so the app mounts after the DOM loads.
+2. `src/styles.css` – Reapplied the Lab 6 visual design with gradients, rounded panels, and message bubble treatments.
+3. `src/js/app.js` – Instantiated the model, view, and controller, then called `controller.init("#app")` inside a `DOMContentLoaded` listener.
+4. `src/js/model.js` – Implemented message CRUD, cascade deletes, `localStorage` persistence with metadata, export/import, and `EventTarget` change notifications.
+5. `src/js/view.js` – Rendered the chat UI, managed user input, edit/delete workflows, export/import dialogs, and dispatched events back to the controller.
+6. `src/js/controller.js` – Wired view events to model methods, listened for model change events, refreshed the UI, and managed quarter-second bot response timers.
+7. `src/js/eliza.js` – Provided the keyword-matching bot responses integrated by the controller.
+8. `README.md` – Documented architecture, usage instructions, trade-offs, reflections, links, and this per-file breakdown for grading clarity.
