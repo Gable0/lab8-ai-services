@@ -2,7 +2,7 @@
 
 Fall 2025 · COMP 305
 
-## Link to the Live Page using Netlify: _Coming soon_
+## Link to the Live Page using Netlify: gablecomp305lab7.netlify.app
 
 ---
 
