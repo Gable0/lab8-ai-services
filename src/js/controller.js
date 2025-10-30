@@ -1,11 +1,15 @@
-import { getBotResponse } from "./eliza.js";
+import { AIService } from "./aiService.js";
 
+/**
+ * Coordinates chat interactions between the model and the view.
+ */
 export class SimpleChatController {
     constructor(model, view) {
         this.model = model;
         this.view = view;
         this.pendingBotTimers = new Map();
         this.pendingLLMRequests = new Map();
+        this.aiService = new AIService();
 
         this.botReplyDelayMs = 250;
         this.mode = "eliza";
@@ -118,7 +122,7 @@ export class SimpleChatController {
         }
 
         if (nextBotMessage) {
-            const reply = getBotResponse(trimmed);
+            const reply = this.aiService.getElizaReply(trimmed);
             this.model.updateMessageContent(nextBotMessage.id, reply, { markEdited: true });
         } else {
             this.queueElizaReply(updatedMessage);
@@ -159,9 +163,13 @@ export class SimpleChatController {
         }
     }
 
+    /**
+     * Schedule an Eliza response using the legacy keyword matcher.
+     * @param {{ id: string, message: string }} userEntry
+     */
     queueElizaReply(userEntry) {
         const timerId = setTimeout(() => {
-            const reply = getBotResponse(userEntry.message);
+            const reply = this.aiService.getElizaReply(userEntry.message);
             this.model.addMessage(reply, false);
             this.pendingBotTimers.delete(userEntry.id);
         }, this.botReplyDelayMs);
@@ -169,6 +177,11 @@ export class SimpleChatController {
         this.pendingBotTimers.set(userEntry.id, timerId);
     }
 
+    /**
+     * Request a ChatGPT reply while tracking cancellation tokens and placeholders.
+     * @param {{ id: string, message: string }} userEntry
+     * @param {{ placeholderId?: string | null }} [options]
+     */
     queueChatGPTReply(userEntry, { placeholderId = null } = {}) {
         const controller = new AbortController();
         const thinkingLabel = "ChatGPT is thinking...";
@@ -195,7 +208,10 @@ export class SimpleChatController {
 
         (async () => {
             try {
-                const reply = await fetchChatGPTResponse(userEntry.message, { signal: controller.signal });
+                const reply = await this.aiService.getChatGPTReply(
+                    userEntry.message,
+                    { signal: controller.signal }
+                );
                 this.model.updateMessageContent(botMessageId, reply, { markEdited: false });
             } catch (error) {
                 const isAbort = controller.signal.aborted;
@@ -240,69 +256,4 @@ export class SimpleChatController {
         this.pendingBotTimers.forEach((timerId) => clearTimeout(timerId));
         this.pendingBotTimers.clear();
     }
-}
-
-async function fetchChatGPTResponse(message, { signal } = {}) {
-    const endpoint = typeof window !== "undefined" && window.CHAT_GPT_ENDPOINT
-        ? window.CHAT_GPT_ENDPOINT
-        : "/api/chatgpt";
-
-    const response = await fetch(endpoint, {
-        method: "POST",
-        headers: {
-            "Content-Type": "application/json"
-        },
-        body: JSON.stringify({ message }),
-        signal
-    });
-
-    if (!response.ok) {
-        throw new Error(`ChatGPT request failed with status ${response.status}`);
-    }
-
-    const data = await response.json();
-    const text =
-        extractText(data, ["reply", "text", "content", "message"]) ||
-        fallbackFromChoices(data) ||
-        "";
-
-    return (text || "I don't have a response right now. Please try again later.").trim();
-}
-
-function extractText(source, keys) {
-    if (!source || typeof source !== "object") return "";
-
-    for (const key of keys) {
-        const value = source[key];
-        if (typeof value === "string" && value.trim() !== "") {
-            return value;
-        }
-    }
-
-    return "";
-}
-
-function fallbackFromChoices(data) {
-    if (!data || !Array.isArray(data.choices) || data.choices.length === 0) {
-        return "";
-    }
-
-    const choice = data.choices[0];
-
-    if (typeof choice === "string") {
-        return choice;
-    }
-
-    if (choice && typeof choice === "object") {
-        if (typeof choice.text === "string") {
-            return choice.text;
-        }
-
-        const message = choice.message || {};
-        if (typeof message.content === "string") {
-            return message.content;
-        }
-    }
-
-    return "";
 }
