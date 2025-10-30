@@ -10,8 +10,16 @@ export class SimpleChatView extends EventTarget {
         host.innerHTML = `
             <div id="chat-box">
                 <div id="chat-box-header-container">
-                    <h1 id="chat-box-title">Chat Assistant</h1>
-                    <h3 id="chat-box-desc">MVC Added</h3>
+                    <div class="chat-box-heading">
+                        <h1 id="chat-box-title">Chat Assistant</h1>
+                    </div>
+                    <div id="bot-mode-wrapper">
+                        <span id="bot-mode-label">Mode:</span>
+                        <select id="bot-mode-select" aria-label="Bot mode">
+                            <option value="eliza" selected>Eliza</option>
+                            <option value="chatgpt">ChatGPT</option>
+                        </select>
+                    </div>
                 </div>
                 <ul id="message-container"></ul>
                 <div id="user-input-container">
@@ -25,7 +33,7 @@ export class SimpleChatView extends EventTarget {
                         <button id="clear-chat-btn">🔥 Clear Chat</button>
                     </div>
                     <p id="chat-box-footer-text">
-                        <span id="name_date_class";</span>Gable Krich 2025 - Comp 305 Lab 7
+                        <span id="name_date_class";</span>Gable Krich 2025 - Comp 305 Lab 8
                     </p>
                 </div>
             </div>
@@ -50,7 +58,8 @@ export class SimpleChatView extends EventTarget {
             importChatButton: document.getElementById("import-chat-btn"),
             clearChatButton: document.getElementById("clear-chat-btn"),
             messageCount: document.getElementById("message-count"),
-            lastSaved: document.getElementById("last-saved")
+            lastSaved: document.getElementById("last-saved"),
+            modeSelect: document.getElementById("bot-mode-select")
         };
     }
 
@@ -61,7 +70,8 @@ export class SimpleChatView extends EventTarget {
             exportChatButton,
             importChatButton,
             clearChatButton,
-            messageContainer
+            messageContainer,
+            modeSelect
         } = this.dom;
 
         sendButton.addEventListener("click", () => this.handleSendClick());
@@ -76,6 +86,10 @@ export class SimpleChatView extends EventTarget {
         userInput.addEventListener("keypress", (evt) => this.onInputKeypress(evt));
 
         messageContainer.addEventListener("click", (evt) => this.onMessageContainerClick(evt));
+
+        if (modeSelect) {
+            modeSelect.addEventListener("change", () => this.handleModeChange(modeSelect.value));
+        }
     }
 
     renderMessages(messages = []) {
@@ -380,6 +394,17 @@ export class SimpleChatView extends EventTarget {
     dispatchImportChat(importedData) {
         this.dispatchEvent(new CustomEvent("importChat", {
             detail: { importedData }
+        }));
+    }
+
+    handleModeChange(mode) {
+        if (!mode) return;
+        this.dispatchModeChange(mode);
+    }
+
+    dispatchModeChange(mode) {
+        this.dispatchEvent(new CustomEvent("modeChange", {
+            detail: { mode }
         }));
     }
 }

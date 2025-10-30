@@ -5,8 +5,10 @@ export class SimpleChatController {
         this.model = model;
         this.view = view;
         this.pendingBotTimers = new Map();
+        this.pendingLLMRequests = new Map();
 
         this.botReplyDelayMs = 250;
+        this.mode = "eliza";
 
         this.boundSend = (evt) => this.onSendMessage(evt);
         this.boundClear = () => this.onClearChat();
@@ -15,6 +17,7 @@ export class SimpleChatController {
         this.boundExport = () => this.onExportChat();
         this.boundImport = (evt) => this.onImportChat(evt);
         this.boundModelChange = (evt) => this.onModelChange(evt);
+        this.boundModeChange = (evt) => this.onModeChange(evt);
     }
 
     init(containerSelector = "#app") {
@@ -31,12 +34,22 @@ export class SimpleChatController {
         this.view.addEventListener("editMessage", this.boundEdit);
         this.view.addEventListener("exportChat", this.boundExport);
         this.view.addEventListener("importChat", this.boundImport);
+        this.view.addEventListener("modeChange", this.boundModeChange);
     }
 
     onModelChange(evt) {
         const { messages, stats } = evt.detail;
         this.view.renderMessages(messages);
         this.view.updateStats(stats);
+    }
+
+    onModeChange(evt) {
+        const { mode } = evt.detail || {};
+        if (!mode || mode === this.mode) return;
+
+        this.mode = mode;
+        this.cancelAllBotTimers();
+        this.abortAllLLMRequests();
     }
 
     syncViewWithModel() {
@@ -50,23 +63,26 @@ export class SimpleChatController {
 
         const entry = this.model.addMessage(message, isUser);
 
-        if (isUser) {
-            const timerId = setTimeout(() => {
-                const reply = getBotResponse(message);
-                this.model.addMessage(reply, false);
-                this.pendingBotTimers.delete(entry.id);
-            }, this.botReplyDelayMs);
+        if (!isUser) return;
 
-            this.pendingBotTimers.set(entry.id, timerId);
+        if (this.mode === "chatgpt") {
+            this.queueChatGPTReply(entry);
+            return;
         }
+
+        this.queueElizaReply(entry);
     }
 
     onClearChat() {
         const removed = this.model.clearMessages();
         removed
             .filter((message) => message.isUser)
-            .forEach((message) => this.cancelBotTimer(message.id));
+            .forEach((message) => {
+                this.cancelBotTimer(message.id);
+                this.abortLLMRequest(message.id);
+            });
         this.cancelAllBotTimers();
+        this.abortAllLLMRequests();
     }
 
     onDeleteMessage(evt) {
@@ -78,7 +94,10 @@ export class SimpleChatController {
 
         removed
             .filter((message) => message.isUser)
-            .forEach((message) => this.cancelBotTimer(message.id));
+            .forEach((message) => {
+                this.cancelBotTimer(message.id);
+                this.abortLLMRequest(message.id);
+            });
     }
 
     onEditMessage(evt) {
@@ -86,21 +105,23 @@ export class SimpleChatController {
         const trimmed = newText ? newText.trim() : "";
         if (!messageId || !trimmed) return;
 
-        const { nextBotMessage } = this.model.updateUserMessage(messageId, trimmed);
+        const { updatedMessage, nextBotMessage } = this.model.updateUserMessage(messageId, trimmed);
+        if (!updatedMessage) return;
 
         this.cancelBotTimer(messageId);
+        const abortedRequest = this.abortLLMRequest(messageId);
+
+        if (this.mode === "chatgpt") {
+            const placeholderId = nextBotMessage?.id || abortedRequest?.botMessageId || null;
+            this.queueChatGPTReply(updatedMessage, { placeholderId });
+            return;
+        }
 
         if (nextBotMessage) {
             const reply = getBotResponse(trimmed);
             this.model.updateMessageContent(nextBotMessage.id, reply, { markEdited: true });
         } else {
-            const timerId = setTimeout(() => {
-                const reply = getBotResponse(trimmed);
-                this.model.addMessage(reply, false);
-                this.pendingBotTimers.delete(messageId);
-            }, this.botReplyDelayMs);
-
-            this.pendingBotTimers.set(messageId, timerId);
+            this.queueElizaReply(updatedMessage);
         }
     }
 
@@ -131,10 +152,80 @@ export class SimpleChatController {
 
             this.model.importMessages(payload);
             this.cancelAllBotTimers();
+            this.abortAllLLMRequests();
         } catch (err) {
             alert("Unable to import chat data.");
             console.error(err);
         }
+    }
+
+    queueElizaReply(userEntry) {
+        const timerId = setTimeout(() => {
+            const reply = getBotResponse(userEntry.message);
+            this.model.addMessage(reply, false);
+            this.pendingBotTimers.delete(userEntry.id);
+        }, this.botReplyDelayMs);
+
+        this.pendingBotTimers.set(userEntry.id, timerId);
+    }
+
+    queueChatGPTReply(userEntry, { placeholderId = null } = {}) {
+        const controller = new AbortController();
+        const thinkingLabel = "ChatGPT is thinking...";
+        let botMessageId = placeholderId;
+
+        if (botMessageId) {
+            const existing = this.model.updateMessageContent(
+                botMessageId,
+                thinkingLabel,
+                { markEdited: false }
+            );
+
+            if (!existing) {
+                botMessageId = null;
+            }
+        }
+
+        if (!botMessageId) {
+            const placeholder = this.model.addMessage(thinkingLabel, false);
+            botMessageId = placeholder.id;
+        }
+
+        this.pendingLLMRequests.set(userEntry.id, { controller, botMessageId });
+
+        (async () => {
+            try {
+                const reply = await fetchChatGPTResponse(userEntry.message, { signal: controller.signal });
+                this.model.updateMessageContent(botMessageId, reply, { markEdited: false });
+            } catch (error) {
+                const isAbort = controller.signal.aborted;
+                const message = isAbort
+                    ? "Request cancelled."
+                    : "Sorry, ChatGPT is unavailable right now.";
+
+                this.model.updateMessageContent(botMessageId, message, { markEdited: false });
+
+                if (!isAbort) {
+                    console.error("ChatGPT request failed:", error);
+                }
+            } finally {
+                this.pendingLLMRequests.delete(userEntry.id);
+            }
+        })();
+    }
+
+    abortLLMRequest(messageId) {
+        const record = this.pendingLLMRequests.get(messageId);
+        if (!record) return null;
+
+        record.controller.abort();
+        this.pendingLLMRequests.delete(messageId);
+        return record;
+    }
+
+    abortAllLLMRequests() {
+        this.pendingLLMRequests.forEach((record) => record.controller.abort());
+        this.pendingLLMRequests.clear();
     }
 
     cancelBotTimer(messageId) {
@@ -149,4 +240,69 @@ export class SimpleChatController {
         this.pendingBotTimers.forEach((timerId) => clearTimeout(timerId));
         this.pendingBotTimers.clear();
     }
+}
+
+async function fetchChatGPTResponse(message, { signal } = {}) {
+    const endpoint = typeof window !== "undefined" && window.CHAT_GPT_ENDPOINT
+        ? window.CHAT_GPT_ENDPOINT
+        : "/api/chatgpt";
+
+    const response = await fetch(endpoint, {
+        method: "POST",
+        headers: {
+            "Content-Type": "application/json"
+        },
+        body: JSON.stringify({ message }),
+        signal
+    });
+
+    if (!response.ok) {
+        throw new Error(`ChatGPT request failed with status ${response.status}`);
+    }
+
+    const data = await response.json();
+    const text =
+        extractText(data, ["reply", "text", "content", "message"]) ||
+        fallbackFromChoices(data) ||
+        "";
+
+    return (text || "I don't have a response right now. Please try again later.").trim();
+}
+
+function extractText(source, keys) {
+    if (!source || typeof source !== "object") return "";
+
+    for (const key of keys) {
+        const value = source[key];
+        if (typeof value === "string" && value.trim() !== "") {
+            return value;
+        }
+    }
+
+    return "";
+}
+
+function fallbackFromChoices(data) {
+    if (!data || !Array.isArray(data.choices) || data.choices.length === 0) {
+        return "";
+    }
+
+    const choice = data.choices[0];
+
+    if (typeof choice === "string") {
+        return choice;
+    }
+
+    if (choice && typeof choice === "object") {
+        if (typeof choice.text === "string") {
+            return choice.text;
+        }
+
+        const message = choice.message || {};
+        if (typeof message.content === "string") {
+            return message.content;
+        }
+    }
+
+    return "";
 }
