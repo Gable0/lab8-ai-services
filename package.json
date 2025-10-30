@@ -1,0 +1,24 @@
+{
+  "name": "lab8-ai-services",
+  "version": "1.0.0",
+  "description": "Fall 2025 · COMP 305",
+  "main": "playwright.config.js",
+  "directories": {
+    "test": "tests"
+  },
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/Gable0/lab8-ai-services.git"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "type": "commonjs",
+  "bugs": {
+    "url": "https://github.com/Gable0/lab8-ai-services/issues"
+  },
+  "homepage": "https://github.com/Gable0/lab8-ai-services#readme"
+}
