@@ -1,7 +1,7 @@
 # lab8-ai-service · Gable Krich
 
 Fall 2025 · COMP 305  
-Live deployment: _coming soon_
+Netlify Deployment: https://gable0comp305lab8.netlify.app
 
 ---
 
