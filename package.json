@@ -4,9 +4,6 @@
   "description": "Fall 2025 · COMP 305",
   "type": "module",
   "scripts": {
-    "dev": "concurrently \"npm:dev:client\" \"npm:dev:server\"",
-    "dev:client": "npx http-server src -p 5500 -c-1",
-    "dev:server": "npm --prefix server run dev",
     "test": "playwright test",
     "test:ui": "playwright test --ui"
   },
@@ -23,7 +20,6 @@
   "homepage": "https://github.com/Gable0/lab8-ai-services#readme",
   "devDependencies": {
     "@playwright/test": "^1.48.0",
-    "concurrently": "^8.2.2",
     "http-server": "^14.1.1"
   }
 }

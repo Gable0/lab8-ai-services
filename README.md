@@ -1,7 +1,7 @@
 # lab8-ai-service · Gable Krich
 
 Fall 2025 · COMP 305  
-Netlify Deployment: gable0comp305lab8.netlify.app
+Live deployment: _coming soon_
 
 ---
 
@@ -12,18 +12,19 @@ Netlify Deployment: gable0comp305lab8.netlify.app
    npm install
    npx playwright install chromium
    ```
-2. **Prep the proxy** (first run only)
+2. **Run the ChatGPT proxy** (keeps API secrets off the client)
    ```bash
-   cd server
-   cp .env.example .env  # add OPENAI_API_KEY=... here
-   npm install
-   cd ..
+    cd server
+    cp .env.example .env  # add OPENAI_API_KEY=... here
+    npm install           # first run only
+    npm run dev           # serves http://localhost:3001/api/chatgpt
    ```
-3. **Launch both servers**
+3. **Serve the front-end**
    ```bash
-   npm run dev
+   npx http-server src -p 5500
+   # or use VS Code Live Server
    ```
-4. Open `http://localhost:5500`, pick **Eliza** or **ChatGPT**, and chat.
+4. Open `http://localhost:5500`, pick **Eliza** or **ChatGPT** from the dropdown, and chat.
 
 ---
 
