@@ -1,8 +1,8 @@
-# lab7-mvc-crud - Gable Krich
+# lab8-ai-service - Gable Krich
 
 Fall 2025 · COMP 305
 
-## Link to the Live Page using Netlify: gablecomp305lab7.netlify.app
+## Link to the Live Page using Netlify: COMING SOON
 
 ---
 
