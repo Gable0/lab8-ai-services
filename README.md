@@ -1,60 +1,111 @@
-# lab8-ai-service - Gable Krich
+# lab8-ai-service · Gable Krich
 
-Fall 2025 · COMP 305
-
-## Link to the Live Page using Netlify: COMING SOON
-
----
-
-## MVC Roles and Responsibilities
-- **Model (`src/js/model.js`)** manages all chat data, persists it to `localStorage`, emits `change` events after every CRUD action, and supports JSON import/export with timestamps and edited flags.
-- **View (`src/js/view.js`)** renders the classic Lab 6 style chat UI, handles user interactions (send, edit, delete, import, export), and raises DOM events without touching data directly.
-- **Controller (`src/js/controller.js`)** listens to view events, coordinates updates with the model, resyncs the UI on model changes, and schedules quarter-second bot replies while cancelling timers when edits or deletes occur.
-- **Bot (`src/js/eliza.js`)** provides the Eliza-style keyword matcher so the controller can generate conversational responses.
+Fall 2025 · COMP 305  
+Live deployment: _coming soon_
 
 ---
 
-## Clear Explanation of Trade-offs
-- **MVC Separation:** Keeps responsibilities distinct for easier maintenance, but introduces more files and event wiring compared to a single-script solution.
-- **localStorage Persistence:** Works offline and matches lab requirements; however, corrupted storage must be guarded against during import.
-- **Cascading Deletes:** Ensures user/bot pairs stay aligned, though it removes all subsequent messages and needs clear confirmation.
-- **Quarter-Second Bot Delay:** Delivers quick feedback that feels responsive, yet still gives the impression of an intentional reply.
+## Quick Start
+
+1. **Install tooling**
+   ```bash
+   npm install
+   npx playwright install chromium
+   ```
+2. **Run the ChatGPT proxy** (keeps API secrets off the client)
+   ```bash
+    cd server
+    cp .env.example .env  # add OPENAI_API_KEY=... here
+    npm install           # first run only
+    npm run dev           # serves http://localhost:3001/api/chatgpt
+   ```
+3. **Serve the front-end**
+   ```bash
+   npx http-server src -p 5500
+   # or use VS Code Live Server
+   ```
+4. Open `http://localhost:5500`, pick **Eliza** or **ChatGPT** from the dropdown, and chat.
 
 ---
 
-## User Guide
-- Open `src/index.html` with a local dev server so ES modules load correctly.
-- Type a message; the Send button activates once there’s text and the bot replies 0.25 s later.
-- Use the edit/delete buttons on user messages; edits trigger fresh bot replies and deletes remove the selected message plus those beneath it.
-- Export downloads the conversation as JSON, Import loads a saved conversation, and Clear wipes everything after confirmation.
-- Refresh the page to see persistence in action; the model restores messages from `localStorage`.
+## Architecture Overview
+
+- **Model (`src/js/model.js`)** – owns chat data, persists to `localStorage`, emits `"change"` events after each CRUD action.
+- **View (`src/js/view.js`)** – renders the UI, dispatches DOM events (send/edit/delete/import/export), exposes `modeChange`.
+- **Controller (`src/js/controller.js`)** – syncs model↔view, handles timers/abort controllers, and delegates replies to the AI service.
+- **AI Service (`src/js/aiService.js`)** – single interface providing `getElizaReply()` and `getChatGPTReply()` so the controller stays provider-agnostic.
+- **Eliza patterns (`src/js/eliza.js`)** – keyword matcher used for offline fallback.
+
+**Trade-offs**
+- Clear MVC separation makes swapping implementations easy but increases file count and event wiring.
+- Client-side persistence is cheap and instant, yet requires defensive parsing on import.
+- Keeping ChatGPT calls behind the proxy avoids leaking API keys but adds a second process to run locally.
 
 ---
 
-## Reflections & Notes
-- DOM events between MVC layers kept responsibilities tidy and made it easy to swap the view without changing logic.
-- Tracking pending bot timers in the controller prevents duplicate replies when users edit or delete quickly.
-- Restoring the original Lab 6 styling while layering in MVC behaviors balanced familiarity with new structure.
-- Import/export shaped the data contract so future labs can swap storage providers without changing the view.
+## AI Research Recap
+
+Exploration lives under `r-n-d/`:
+- [`r-n-d/openai-chatGPT/chat-demo.js`](r-n-d/openai-chatGPT/chat-demo.js) – sample against `gpt-4o-mini`.
+- [`r-n-d/anthropic-claude/chat-demo.js`](r-n-d/anthropic-claude/chat-demo.js) – equivalent Claude Haiku call.
+- [`r-n-d/llm-eval.md`](r-n-d/llm-eval.md) – write-up comparing costs, activation steps, limits, and suitability.
+
+**Decision:** OpenAI powered the final build because I already funded credits; the architecture keeps swapping trivial if Anthropic becomes preferable.
 
 ---
 
-## Links and Documentation
-- [Entry Point](src/js/app.js) – boots the MVC stack on `DOMContentLoaded`.
-- [Model](src/js/model.js) – CRUD, persistence, and event dispatchers.
-- [View](src/js/view.js) – UI rendering, edit/delete helpers, import/export dialogs.
-- [Controller](src/js/controller.js) – coordination logic and bot timing.
-- [Eliza Bot](src/js/eliza.js) – keyword-based response table.
-- [Stylesheet](src/styles.css) – original Lab 6 look and feel carried over.
+## Security & Configuration
+
+- `.env` files are ignored by Git. The proxy (`server/index.js`) reads `OPENAI_API_KEY` via `dotenv` and never exposes it to the browser.
+- `window.CHAT_GPT_ENDPOINT` (set in `src/index.html`) points the UI to the proxy; change it if you deploy elsewhere.
+- Automated tests mock `/api/chatgpt`, so no real API calls fire during CI runs.
+- Restart `npm run dev` whenever you rotate keys; quota exhaustion returns 429s that surface in the UI as “ChatGPT is unavailable right now.”
 
 ---
 
-## Step-by-Step Work Log
-1. `src/index.html` – Created the root container and module script reference so the app mounts after the DOM loads.
-2. `src/styles.css` – Reapplied the Lab 6 visual design with gradients, rounded panels, and message bubble treatments.
-3. `src/js/app.js` – Instantiated the model, view, and controller, then called `controller.init("#app")` inside a `DOMContentLoaded` listener.
-4. `src/js/model.js` – Implemented message CRUD, cascade deletes, `localStorage` persistence with metadata, export/import, and `EventTarget` change notifications.
-5. `src/js/view.js` – Rendered the chat UI, managed user input, edit/delete workflows, export/import dialogs, and dispatched events back to the controller.
-6. `src/js/controller.js` – Wired view events to model methods, listened for model change events, refreshed the UI, and managed quarter-second bot response timers.
-7. `src/js/eliza.js` – Provided the keyword-matching bot responses integrated by the controller.
-8. `README.md` – Documented architecture, usage instructions, trade-offs, reflections, links, and this per-file breakdown for grading clarity.
+## Testing with Playwright
+
+Two end-to-end specs live in `tests/chat.spec.js`:
+1. **Eliza flow** – confirms a user message yields a non-empty bot reply.
+2. **ChatGPT flow** – intercepts `/api/chatgpt` and returns a mocked response to keep tests deterministic.
+
+Run them with:
+```bash
+npm test
+# or interactive runner
+npm run test:ui
+```
+Playwright spins up a static server for `src/`, and reports are ignored via `.gitignore` (`playwright-report/`, `test-results/`).
+
+---
+
+## Privacy & Cost Notes
+
+- ChatGPT Plus does not include API credits; the pay-as-you-go key in `server/.env` is funded manually.
+- When the account hits rate or spend limits, the proxy catches the error, logs it server-side, and the UI shows a friendly fallback.
+- No conversational data is persisted beyond localStorage unless the user explicitly exports JSON.
+
+---
+
+## Feature Guide
+
+- **Mode selector** – dropdown toggles between Eliza (offline) and ChatGPT (cloud). Switching cancels all timers and pending fetches.
+- **Message actions** – send, edit, delete, clear, import/export all route through the model so persistence stays consistent.
+- **Placeholder handling** – ChatGPT mode shows “ChatGPT is thinking…” while awaiting the proxy and replaces it with either the LLM reply or an error.
+
+---
+
+## Commit & Workflow Practices
+
+- Work landed in focused commits with descriptive messages (check Git history). Typical flow: implement feature → run Playwright/ manual smoke tests → commit.
+
+---
+
+## Work Log (abridged)
+
+1. Bootstrapped MVC UI from Lab 7.
+2. Added mode dropdown + view events.
+3. Introduced `AIService` abstraction and rewired the controller.
+4. Built Express proxy for OpenAI with `.env` support and strict CORS.
+5. Added Playwright smoke tests (Eliza + mocked ChatGPT) and headless server config.
+6. Documented setup, AI provider research, security, and testing in this README.
