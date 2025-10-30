@@ -12,7 +12,14 @@ if(!process.env.OPENAI_API_KEY){
 
 const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
 
-app.use(cors({origin: "http://localhost:5173"}));
+app.use(cors({
+    origin: [
+        "http://127.0.0.1:5500",
+        "http://localhost:5500",
+        "http://localhost:5173",
+        "http://127.0.0.1:5173"
+    ]
+}));
 app.use(express.json());
 
 app.post("/api/chatgpt", async (req, res) => {
@@ -23,7 +30,7 @@ app.post("/api/chatgpt", async (req, res) => {
     
     try{
         const completion = await openai.chat.completions.create({
-            model: "gpt-4o-mini", 
+            model: "gpt-4o-mini",
             max_tokens: 500,
             messages: [
                 {role: "system", content: "You are a helpful assistant."},
